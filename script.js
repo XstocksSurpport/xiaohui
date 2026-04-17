@@ -25,6 +25,152 @@
   /** 背景音乐文件；若有可直接播放的 mp3 直链，可改成完整 https://… 地址 */
   var BGM_SRC = "audio/bgm.mp3";
 
+  /** 随机浮层：进/出各约 0.4s + 中间约 3.2s ≈ 整段 4s */
+  var FLOAT_PHOTO_TRANS_MS = 400;
+  var FLOAT_PHOTO_HOLD_MS = 3200;
+  var floatPhotoTimer = null;
+  var floatPhotoRunning = false;
+  var lastFloatPhotoUrl = "";
+
+  function getWallPhotoUrls() {
+    var list = typeof window !== "undefined" ? window.__WALL_PHOTOS__ : null;
+    if (!list || !list.length) return [];
+    var max = Math.min(SLOT_COUNT, list.length);
+    var out = [];
+    var i;
+    for (i = 0; i < max; i++) out.push(list[i]);
+    return out;
+  }
+
+  function pickRandomWallPhotoUrl() {
+    var urls = getWallPhotoUrls();
+    if (!urls.length) return "";
+    var url;
+    var tries = 0;
+    do {
+      url = urls[Math.floor(Math.random() * urls.length)];
+      tries++;
+    } while (url === lastFloatPhotoUrl && urls.length > 1 && tries < 10);
+    lastFloatPhotoUrl = url;
+    return url;
+  }
+
+  function clearFloatPhotoTimer() {
+    if (floatPhotoTimer) {
+      clearTimeout(floatPhotoTimer);
+      floatPhotoTimer = null;
+    }
+  }
+
+  function layoutFloatPhotoSpot(img) {
+    var vw = window.innerWidth;
+    var vh = window.innerHeight;
+    var pad = Math.max(12, Math.min(24, vw * 0.02));
+    var safeTop =
+      typeof window !== "undefined" && window.visualViewport
+        ? window.visualViewport.offsetTop
+        : 0;
+    pad += Math.min(8, safeTop);
+    var nw = img.naturalWidth || 400;
+    var nh = img.naturalHeight || 300;
+    var maxW = vw * 0.34;
+    var maxH = vh * 0.34;
+    var scale = Math.min(maxW / nw, maxH / nh, 1);
+    var rectW = Math.round(nw * scale);
+    var rectH = Math.round(nh * scale);
+    img.style.width = rectW + "px";
+    img.style.height = rectH + "px";
+    var maxLeft = Math.max(pad, vw - rectW - pad);
+    var maxTop = Math.max(pad, vh - rectH - pad);
+    var left = pad + Math.random() * Math.max(0, maxLeft - pad);
+    var top = pad + Math.random() * Math.max(0, maxTop - pad);
+    img.style.left = Math.round(left) + "px";
+    img.style.top = Math.round(top) + "px";
+  }
+
+  function stopFloatPhotos() {
+    floatPhotoRunning = false;
+    clearFloatPhotoTimer();
+    var layer = document.getElementById("floatPhotoLayer");
+    var img = document.getElementById("floatPhotoSpot");
+    if (img) {
+      img.onload = null;
+      img.onerror = null;
+      img.classList.remove("float-photo-img--in", "float-photo-img--out");
+      img.removeAttribute("src");
+    }
+    if (layer) {
+      layer.classList.add("is-hidden");
+      layer.setAttribute("aria-hidden", "true");
+    }
+  }
+
+  function scheduleFloatPhotoStep(fn, ms) {
+    clearFloatPhotoTimer();
+    floatPhotoTimer = setTimeout(function () {
+      floatPhotoTimer = null;
+      fn();
+    }, ms);
+  }
+
+  function runFloatPhotoCycle() {
+    if (!gateOkThisLoad || !floatPhotoRunning) return;
+    var layer = document.getElementById("floatPhotoLayer");
+    var img = document.getElementById("floatPhotoSpot");
+    if (!layer || !img) return;
+
+    var url = pickRandomWallPhotoUrl();
+    if (!url) {
+      scheduleFloatPhotoStep(runFloatPhotoCycle, 1600);
+      return;
+    }
+
+    img.classList.remove("float-photo-img--in", "float-photo-img--out");
+
+    img.onload = function () {
+      img.onload = null;
+      img.onerror = null;
+      layoutFloatPhotoSpot(img);
+      requestAnimationFrame(function () {
+        requestAnimationFrame(function () {
+          if (!floatPhotoRunning || !gateOkThisLoad) return;
+          img.classList.add("float-photo-img--in");
+        });
+      });
+
+      scheduleFloatPhotoStep(function () {
+        if (!floatPhotoRunning || !gateOkThisLoad) return;
+        img.classList.remove("float-photo-img--in");
+        img.classList.add("float-photo-img--out");
+        scheduleFloatPhotoStep(function () {
+          if (!floatPhotoRunning || !gateOkThisLoad) return;
+          img.classList.remove("float-photo-img--in", "float-photo-img--out");
+          img.removeAttribute("src");
+          scheduleFloatPhotoStep(runFloatPhotoCycle, 180);
+        }, FLOAT_PHOTO_TRANS_MS);
+      }, FLOAT_PHOTO_TRANS_MS + FLOAT_PHOTO_HOLD_MS);
+    };
+
+    img.onerror = function () {
+      img.onload = null;
+      img.onerror = null;
+      scheduleFloatPhotoStep(runFloatPhotoCycle, 900);
+    };
+
+    img.src = url;
+  }
+
+  function startFloatPhotos() {
+    if (!gateOkThisLoad) return;
+    if (floatPhotoRunning) return;
+    var layer = document.getElementById("floatPhotoLayer");
+    if (!layer || !getWallPhotoUrls().length) return;
+    floatPhotoRunning = true;
+    layer.classList.remove("is-hidden");
+    layer.setAttribute("aria-hidden", "false");
+    scheduleFloatPhotoStep(runFloatPhotoCycle, 320);
+  }
+
   function getBgm() {
     return document.getElementById("bgm");
   }
@@ -258,6 +404,7 @@
         requestAnimationFrame(function () {
           tryPlayBgmAfterUnlock();
           renderHeartGrid();
+          startFloatPhotos();
         });
         return;
       }
