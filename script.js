@@ -22,6 +22,56 @@
   var SITE_PASSWORD = "txh1314";
   /** 仅本次打开页面有效；刷新或重新打开都要再输密码 */
   var gateOkThisLoad = false;
+  /** 背景音乐文件；若有可直接播放的 mp3 直链，可改成完整 https://… 地址 */
+  var BGM_SRC = "audio/bgm.mp3";
+
+  function getBgm() {
+    return document.getElementById("bgm");
+  }
+
+  function getPhonoWrap() {
+    return document.getElementById("phonographWrap");
+  }
+
+  function syncPhonoUi() {
+    var a = getBgm();
+    var wrap = getPhonoWrap();
+    var btn = document.getElementById("phonographBtn");
+    if (!a || !wrap) return;
+    var on = !a.paused;
+    wrap.classList.toggle("is-playing", on);
+    if (btn) btn.setAttribute("aria-pressed", on ? "true" : "false");
+  }
+
+  /** 在用户点击等手势回调里调用，尽量满足浏览器自动播放策略 */
+  function tryPlayBgmInGesture() {
+    var a = getBgm();
+    if (!a) return;
+    a.volume = 0.82;
+    a.play().then(syncPhonoUi).catch(syncPhonoUi);
+  }
+
+  function setupBgm() {
+    var a = getBgm();
+    var btn = document.getElementById("phonographBtn");
+    if (!a || !btn) return;
+    if (BGM_SRC) {
+      a.src = BGM_SRC;
+    }
+    a.addEventListener("play", syncPhonoUi);
+    a.addEventListener("pause", syncPhonoUi);
+    a.addEventListener("ended", syncPhonoUi);
+    btn.addEventListener("click", function (e) {
+      e.preventDefault();
+      e.stopPropagation();
+      if (a.paused) {
+        tryPlayBgmInGesture();
+      } else {
+        a.pause();
+        syncPhonoUi();
+      }
+    });
+  }
 
   function heartPoint(t) {
     var x = 16 * Math.pow(Math.sin(t), 3);
@@ -168,6 +218,7 @@
         gateOkThisLoad = true;
         unlockSiteBody();
         hideGate();
+        tryPlayBgmInGesture();
         requestAnimationFrame(function () {
           renderHeartGrid();
         });
@@ -189,6 +240,7 @@
 
     function dismissLetter() {
       overlay.classList.add("is-hidden");
+      tryPlayBgmInGesture();
       if (gateOkThisLoad) {
         unlockSiteBody();
         hideGate();
@@ -210,6 +262,7 @@
 
   setupGate();
   setupLetter();
+  setupBgm();
 
   var resizeTimer;
   window.addEventListener(

@@ -106,6 +106,19 @@
       </div>
     </div>
 
+    <!-- 背景音乐：请将《稳稳的幸福》转为 mp3 命名为 bgm.mp3 放入 audio/（百度视频页无法直接作 src） -->
+    <div class="phonograph-wrap" id="phonographWrap">
+      <button type="button" class="phonograph" id="phonographBtn" aria-label="背景音乐：点击暂停或继续" aria-pressed="false">
+        <span class="phono-platter" aria-hidden="true">
+          <span class="phono-groove"></span>
+          <span class="phono-label">♪</span>
+        </span>
+        <span class="phono-arm" aria-hidden="true"></span>
+        <span class="phono-pivot" aria-hidden="true"></span>
+      </button>
+    </div>
+    <audio id="bgm" src="audio/bgm.mp3" loop playsinline preload="auto"></audio>
+
     <script src="photo-manifest.js"></script>
     <script src="script.js"></script>
   </body>
