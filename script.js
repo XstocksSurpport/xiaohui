@@ -25,15 +25,10 @@
     return t;
   }
 
-  function bustPhotoUrl(url, n) {
-    if (!url || n <= 0) return url;
-    var join = url.indexOf("?") >= 0 ? "&" : "?";
-    return url + join + "wretry=" + String(n);
-  }
-
   /**
-   * 爱心格 / 浮层共用：优先原图，失败自动带参数重试，最后占位图保证不裂图。
-   * onLoadEnd(img) 在任意一次成功解码后调用（含占位图）。
+   * 爱心格 / 浮层：同一 URL 重试（绝不加 ?wretry，很多静态站会把带查询的路径判 404）。
+   * 须先把 img 挂进 document，否则 isConnected 为 false 不会赋值 src。
+   * onLoadEnd(img) 在成功解码后调用（含占位图）。
    */
   function wireReliablePhoto(img, baseUrl, onLoadEnd, opts) {
     opts = opts || {};
@@ -60,12 +55,15 @@
     function applySrc() {
       if (!alive() || !img.isConnected) return;
       attempt++;
-      var u = attempt === 1 ? baseUrl : bustPhotoUrl(baseUrl, attempt - 1);
-      img.src = u;
+      img.src = baseUrl;
     }
 
     img.onload = function () {
       if (!alive()) return;
+      if (img.naturalWidth === 0 || img.naturalHeight === 0) {
+        img.onerror();
+        return;
+      }
       finish();
     };
 
@@ -87,9 +85,13 @@
         };
         return;
       }
-      var delay = 160 + attempt * 100;
+      var delay = 100 + attempt * 70;
       setTimeout(function () {
         if (!alive() || !img.isConnected) return;
+        img.removeAttribute("src");
+        try {
+          void img.offsetWidth;
+        } catch (e) {}
         applySrc();
       }, delay);
     };
@@ -565,14 +567,14 @@
       cell.style.setProperty("--y", positions[n].y + "%");
       var slotNum = n + 1;
       var src = PHOTO_BY_SLOT[slotNum];
+      var img = null;
       if (src) {
         cell.classList.add("has-photo");
         cell.setAttribute("role", "img");
         cell.setAttribute("aria-label", "第 " + slotNum + " 格照片");
-        var img = document.createElement("img");
+        img = document.createElement("img");
         img.alt = "恋爱相册第 " + slotNum + " 张";
         cell.appendChild(img);
-        wireReliablePhoto(img, src, null);
       } else {
         cell.setAttribute("role", "img");
         cell.setAttribute("aria-label", "第 " + slotNum + " 格相册位");
@@ -581,6 +583,9 @@
         cell.appendChild(label);
       }
       grid.appendChild(cell);
+      if (src) {
+        wireReliablePhoto(img, src, null);
+      }
     }
   }
 
