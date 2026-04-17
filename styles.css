@@ -362,6 +362,8 @@ body::after {
   display: block;
   pointer-events: none;
   image-rendering: auto;
+  transform: translateZ(0);
+  backface-visibility: hidden;
 }
 
 .photo-slot.has-photo::after {
@@ -779,6 +781,7 @@ html.pixel-root .vinyl-player__arm-head {
 
 .vinyl-player.is-playing .vinyl-player__disc {
   animation: vinyl-spin 5.6s linear infinite;
+  will-change: transform;
 }
 
 .vinyl-player.is-playing .vinyl-player__arm-rod {
@@ -1125,13 +1128,14 @@ body.gate-active {
   box-shadow: 0 0 0 var(--c7);
 }
 
-/* —— 全站随机浮层照片（单张、约 1/3 视口、淡入淡出） —— */
+/* —— 全站随机浮层照片（单张、约 1/3 视口；z 高于黑胶 88，低于告白信 90 / 鲜花 96） —— */
 .float-photo-layer {
   pointer-events: none;
   position: fixed;
   inset: 0;
-  z-index: 14;
+  z-index: 89;
   overflow: hidden;
+  transform: translateZ(0);
 }
 
 .float-photo-layer.is-hidden {
@@ -1148,9 +1152,10 @@ body.gate-active {
   box-shadow: 0 14px 44px rgba(74, 44, 61, 0.32);
   border: 2px solid rgba(255, 255, 255, 0.92);
   opacity: 0;
-  transform: scale(0.86) translateY(16px);
-  transition: opacity 0.12s cubic-bezier(0.22, 1, 0.36, 1), transform 0.12s cubic-bezier(0.22, 1, 0.36, 1);
+  transform: scale(0.92) translate3d(0, 12px, 0);
+  transition: opacity 0.22s cubic-bezier(0.26, 0.88, 0.32, 0.98), transform 0.22s cubic-bezier(0.26, 0.88, 0.32, 0.98);
   will-change: opacity, transform;
+  backface-visibility: hidden;
 }
 
 .pixel-root .float-photo-layer .float-photo-img {
@@ -1159,12 +1164,12 @@ body.gate-active {
 
 .float-photo-img.float-photo-img--in {
   opacity: 1;
-  transform: scale(1) translateY(0);
+  transform: scale(1) translate3d(0, 0, 0);
 }
 
 .float-photo-img.float-photo-img--out {
   opacity: 0;
-  transform: scale(0.9) translateY(-12px);
+  transform: scale(0.94) translate3d(0, -10px, 0);
 }
 
 @media (min-width: 480px) {

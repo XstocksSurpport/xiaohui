@@ -119,9 +119,11 @@
     { src: "audio/ni-yidingyao-xingfu.mp3", title: "你一定要幸福" }
   ];
   var bgmTrackIndex = 0;
+  /** 预加载「下一首」进 HTTP 缓存，减轻切歌解码卡顿 */
+  var bgmPreloadAudio = null;
 
-  /** 随机浮层：整段约 1s（进 + 停 + 出 + 间隔） */
-  var FLOAT_PHOTO_TRANS_MS = 120;
+  /** 随机浮层：与 CSS transition 一致（约 0.22s 进/出） */
+  var FLOAT_PHOTO_TRANS_MS = 220;
   var FLOAT_PHOTO_HOLD_MS = 520;
   var floatPhotoTimer = null;
   var floatPhotoRunning = false;
@@ -156,6 +158,11 @@
     }
   }
 
+  function rectsOverlap(ax, ay, aw, ah, bx, by, bw, bh) {
+    return ax < bx + bw && ax + aw > bx && ay < by + bh && ay + ah > by;
+  }
+
+  /** 随机位置避开右上角黑胶区域，避免被挡；同时 z-index 已高于播放器 */
   function layoutFloatPhotoSpot(img) {
     var vw = window.innerWidth;
     var vh = window.innerHeight;
@@ -176,8 +183,23 @@
     img.style.height = rectH + "px";
     var maxLeft = Math.max(pad, vw - rectW - pad);
     var maxTop = Math.max(pad, vh - rectH - pad);
-    var left = pad + Math.random() * Math.max(0, maxLeft - pad);
-    var top = pad + Math.random() * Math.max(0, maxTop - pad);
+    var wrap = document.getElementById("phonographWrap");
+    var pr = wrap && wrap.getBoundingClientRect ? wrap.getBoundingClientRect() : null;
+    var avoid = 14;
+    var px = pr ? pr.left - avoid : 0;
+    var py = pr ? pr.top - avoid : 0;
+    var pw = pr ? pr.width + avoid * 2 : 0;
+    var ph = pr ? pr.height + avoid * 2 : 0;
+    var left = pad;
+    var top = pad;
+    var tries;
+    for (tries = 0; tries < 48; tries++) {
+      left = pad + Math.random() * Math.max(0, maxLeft - pad);
+      top = pad + Math.random() * Math.max(0, maxTop - pad);
+      if (!pr || !pw || !ph || !rectsOverlap(left, top, rectW, rectH, px, py, pw, ph)) {
+        break;
+      }
+    }
     img.style.left = Math.round(left) + "px";
     img.style.top = Math.round(top) + "px";
   }
@@ -279,6 +301,51 @@
 
   var BGM_VOLUME = 0.7;
 
+  function disposeBgmPreload() {
+    if (!bgmPreloadAudio) return;
+    try {
+      bgmPreloadAudio.pause();
+      bgmPreloadAudio.removeAttribute("src");
+      bgmPreloadAudio.load();
+    } catch (e) {}
+    bgmPreloadAudio = null;
+  }
+
+  function resolvedAssetUrl(pathRel) {
+    try {
+      return new URL(pathRel, window.location.href).href;
+    } catch (e) {
+      return pathRel;
+    }
+  }
+
+  function audioSrcEquals(aEl, pathRel) {
+    var want = resolvedAssetUrl(pathRel);
+    var cur = String(aEl.currentSrc || aEl.src || "");
+    if (!cur) return false;
+    if (cur === want) return true;
+    try {
+      return new URL(cur, window.location.href).href === want;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  function primeBgmPreloadFollowing() {
+    disposeBgmPreload();
+    if (!BGM_PLAYLIST.length || BGM_PLAYLIST.length < 2) return;
+    var nextI = (bgmTrackIndex + 1) % BGM_PLAYLIST.length;
+    var t = BGM_PLAYLIST[nextI];
+    if (!t || !t.src) return;
+    try {
+      bgmPreloadAudio = new Audio(t.src);
+      bgmPreloadAudio.preload = "auto";
+      bgmPreloadAudio.load();
+    } catch (e) {
+      bgmPreloadAudio = null;
+    }
+  }
+
   function applyBgmTrack(index) {
     var a = getBgm();
     if (!a || !BGM_PLAYLIST.length) return;
@@ -286,11 +353,14 @@
     bgmTrackIndex = ((index % n) + n) % n;
     var t = BGM_PLAYLIST[bgmTrackIndex];
     a.pause();
-    a.src = t.src;
     a.loop = false;
-    a.load();
+    if (!audioSrcEquals(a, t.src)) {
+      a.src = t.src;
+      a.load();
+    }
     var titleEl = document.getElementById("bgmTrackTitle");
     if (titleEl) titleEl.textContent = t.title;
+    primeBgmPreloadFollowing();
   }
 
   /** 已通过密码进入站内后调用：须紧跟用户手势（提交密码）同步调用，否则浏览器会拦截自动播放。不再重复 load 第一首，避免打断 play。 */
@@ -301,6 +371,8 @@
     a.loop = false;
     if (bgmTrackIndex !== 0) {
       applyBgmTrack(0);
+    } else {
+      primeBgmPreloadFollowing();
     }
 
     function kickPlay() {
@@ -351,8 +423,15 @@
       if (!gateOkThisLoad) return;
       if (!BGM_PLAYLIST.length) return;
       var nxt = (bgmTrackIndex + 1) % BGM_PLAYLIST.length;
-      applyBgmTrack(nxt);
-      a.play().then(syncPhonoUi).catch(syncPhonoUi);
+      requestAnimationFrame(function () {
+        applyBgmTrack(nxt);
+        var p = a.play();
+        if (p !== undefined && p.then) {
+          p.then(syncPhonoUi).catch(syncPhonoUi);
+        } else {
+          syncPhonoUi();
+        }
+      });
     });
 
     function toggleBgm(ev) {
@@ -493,7 +572,7 @@
         var img = document.createElement("img");
         img.alt = "恋爱相册第 " + slotNum + " 张";
         cell.appendChild(img);
-        wireReliablePhoto(img, src, null, { decoding: "sync" });
+        wireReliablePhoto(img, src, null);
       } else {
         cell.setAttribute("role", "img");
         cell.setAttribute("aria-label", "第 " + slotNum + " 格相册位");
