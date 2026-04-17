@@ -6,6 +6,97 @@
   } catch (e) {}
 
   var SLOT_COUNT = 52;
+  /** 相册图多次重试后仍失败则用内联 SVG，避免裂图 */
+  var PHOTO_RETRY_MAX = 8;
+  var PHOTO_FALLBACK =
+    "data:image/svg+xml," +
+    encodeURIComponent(
+      '<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128"><rect fill="#ffe8f3" width="128" height="128"/><path fill="#e85a9c" d="M64 96c-24-18-36-32-36-48 0-12 10-22 22-22 7 0 14 4 18 10 4-6 11-10 18-10 12 0 22 10 22 22 0 16-12 30-36 48z"/></svg>'
+    );
+
+  /** 相对路径统一成绝对地址，避免子路径部署或解析差异 */
+  function resolvePhotoUrl(rel) {
+    if (!rel || typeof rel !== "string") return rel;
+    var t = rel.trim();
+    if (/^https?:\/\//i.test(t) || t.indexOf("data:") === 0 || t.indexOf("blob:") === 0) return t;
+    try {
+      return new URL(t, document.baseURI).href;
+    } catch (err) {
+      return t;
+    }
+  }
+
+  function bustPhotoUrl(url, n) {
+    if (!url || n <= 0) return url;
+    var join = url.indexOf("?") >= 0 ? "&" : "?";
+    return url + join + "wretry=" + String(n);
+  }
+
+  /**
+   * 爱心格 / 浮层共用：优先原图，失败自动带参数重试，最后占位图保证不裂图。
+   * onLoadEnd(img) 在任意一次成功解码后调用（含占位图）。
+   */
+  function wireReliablePhoto(img, baseUrl, onLoadEnd) {
+    img._wireGen = (img._wireGen || 0) + 1;
+    var wireGen = img._wireGen;
+    var attempt = 0;
+    img.loading = "eager";
+    img.decoding = "async";
+
+    function alive() {
+      return img._wireGen === wireGen;
+    }
+
+    function cleanup() {
+      img.onload = null;
+      img.onerror = null;
+    }
+
+    function finish() {
+      cleanup();
+      if (onLoadEnd && alive() && img.isConnected) onLoadEnd(img);
+    }
+
+    function applySrc() {
+      if (!alive() || !img.isConnected) return;
+      attempt++;
+      var u = attempt === 1 ? baseUrl : bustPhotoUrl(baseUrl, attempt - 1);
+      img.src = u;
+    }
+
+    img.onload = function () {
+      if (!alive()) return;
+      finish();
+    };
+
+    img.onerror = function () {
+      if (!alive()) return;
+      if (attempt >= PHOTO_RETRY_MAX) {
+        cleanup();
+        if (!alive() || !img.isConnected) return;
+        img.src = PHOTO_FALLBACK;
+        img.onload = function () {
+          if (!alive()) return;
+          img.onload = null;
+          if (onLoadEnd && img.isConnected) onLoadEnd(img);
+        };
+        img.onerror = function () {
+          if (!alive()) return;
+          img.onerror = null;
+          if (onLoadEnd && img.isConnected) onLoadEnd(img);
+        };
+        return;
+      }
+      var delay = 160 + attempt * 100;
+      setTimeout(function () {
+        if (!alive() || !img.isConnected) return;
+        applySrc();
+      }, delay);
+    };
+
+    applySrc();
+  }
+
   /** 由 photo-manifest.js 的 window.__WALL_PHOTOS__ 顺序对应爱心格子编号 1→52 */
   function buildPhotoBySlot() {
     var list = typeof window !== "undefined" ? window.__WALL_PHOTOS__ : null;
@@ -14,7 +105,7 @@
     var i;
     var max = Math.min(SLOT_COUNT, list.length);
     for (i = 0; i < max; i++) {
-      map[i + 1] = list[i];
+      map[i + 1] = resolvePhotoUrl(list[i]);
     }
     return map;
   }
@@ -37,12 +128,11 @@
   var lastFloatPhotoUrl = "";
 
   function getWallPhotoUrls() {
-    var list = typeof window !== "undefined" ? window.__WALL_PHOTOS__ : null;
-    if (!list || !list.length) return [];
-    var max = Math.min(SLOT_COUNT, list.length);
     var out = [];
     var i;
-    for (i = 0; i < max; i++) out.push(list[i]);
+    for (i = 1; i <= SLOT_COUNT; i++) {
+      if (PHOTO_BY_SLOT[i]) out.push(PHOTO_BY_SLOT[i]);
+    }
     return out;
   }
 
@@ -98,6 +188,7 @@
     var layer = document.getElementById("floatPhotoLayer");
     var img = document.getElementById("floatPhotoSpot");
     if (img) {
+      img._wireGen = (img._wireGen || 0) + 1;
       img.onload = null;
       img.onerror = null;
       img.classList.remove("float-photo-img--in", "float-photo-img--out");
@@ -131,9 +222,8 @@
 
     img.classList.remove("float-photo-img--in", "float-photo-img--out");
 
-    img.onload = function () {
-      img.onload = null;
-      img.onerror = null;
+    wireReliablePhoto(img, url, function () {
+      if (!floatPhotoRunning || !gateOkThisLoad) return;
       layoutFloatPhotoSpot(img);
       requestAnimationFrame(function () {
         requestAnimationFrame(function () {
@@ -153,15 +243,7 @@
           scheduleFloatPhotoStep(runFloatPhotoCycle, 180);
         }, FLOAT_PHOTO_TRANS_MS);
       }, FLOAT_PHOTO_TRANS_MS + FLOAT_PHOTO_HOLD_MS);
-    };
-
-    img.onerror = function () {
-      img.onload = null;
-      img.onerror = null;
-      scheduleFloatPhotoStep(runFloatPhotoCycle, 900);
-    };
-
-    img.src = url;
+    });
   }
 
   function startFloatPhotos() {
@@ -380,11 +462,9 @@
         cell.setAttribute("role", "img");
         cell.setAttribute("aria-label", "第 " + slotNum + " 格照片");
         var img = document.createElement("img");
-        img.src = src;
         img.alt = "恋爱相册第 " + slotNum + " 张";
-        img.loading = "lazy";
-        img.decoding = "async";
         cell.appendChild(img);
+        wireReliablePhoto(img, src, null);
       } else {
         cell.setAttribute("role", "img");
         cell.setAttribute("aria-label", "第 " + slotNum + " 格相册位");
