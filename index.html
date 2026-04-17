@@ -81,7 +81,7 @@
       </div>
     </div>
 
-    <!-- 音乐仅在通过密码、siteBody 显示后出现；mp3 放 audio/bgm.mp3 -->
+    <!-- 双曲：audio/bgm.mp3、audio/ni-yidingyao-xingfu.mp3；播完第一首自动播第二首，列表循环 -->
     <div class="vinyl-player" id="phonographWrap">
       <div class="vinyl-player__deck">
         <button type="button" class="vinyl-player__disc-btn" id="phonographBtn" aria-label="点击暂停或继续播放" aria-pressed="false">
@@ -96,14 +96,18 @@
           <span class="vinyl-player__arm-head"></span>
         </div>
       </div>
+      <div class="vinyl-player__meta">
+        <p class="vinyl-player__track" id="bgmTrackTitle">稳稳的幸福</p>
+        <button type="button" class="vinyl-player__switch" id="bgmSwitch" aria-label="切换歌曲" title="切换歌曲">⇄</button>
+      </div>
       <div class="vinyl-player__transport">
-        <button type="button" class="vinyl-player__tbtn" id="bgmRew" aria-label="后退八秒">⟲</button>
+        <button type="button" class="vinyl-player__tbtn" id="bgmPrev" aria-label="上一首">⏮</button>
         <button type="button" class="vinyl-player__tbtn vinyl-player__tbtn--main" id="vinylPlayCenter" aria-label="播放或暂停">▶</button>
-        <button type="button" class="vinyl-player__tbtn" id="bgmFwd" aria-label="前进八秒">⟳</button>
+        <button type="button" class="vinyl-player__tbtn" id="bgmNext" aria-label="下一首">⏭</button>
       </div>
       <p class="vinyl-player__hint">请打开手机音量~</p>
     </div>
-    <audio id="bgm" src="audio/bgm.mp3" loop playsinline preload="auto"></audio>
+    <audio id="bgm" playsinline preload="auto"></audio>
     </div>
 
     <div class="letter-overlay" id="letterOverlay" role="dialog" aria-modal="true" aria-labelledby="letterTitle">

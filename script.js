@@ -22,8 +22,12 @@
   var SITE_PASSWORD = "txh1314";
   /** 仅本次打开页面有效；刷新或重新打开都要再输密码 */
   var gateOkThisLoad = false;
-  /** 背景音乐文件；若有可直接播放的 mp3 直链，可改成完整 https://… 地址 */
-  var BGM_SRC = "audio/bgm.mp3";
+  /** 顺序播放：播完上一首自动下一首；循环整张列表 */
+  var BGM_PLAYLIST = [
+    { src: "audio/bgm.mp3", title: "稳稳的幸福" },
+    { src: "audio/ni-yidingyao-xingfu.mp3", title: "你一定要幸福" }
+  ];
+  var bgmTrackIndex = 0;
 
   /** 随机浮层：进/出各约 0.4s + 中间约 3.2s ≈ 整段 4s */
   var FLOAT_PHOTO_TRANS_MS = 400;
@@ -193,12 +197,26 @@
 
   var BGM_VOLUME = 0.7;
 
-  /** 已通过密码进入站内后调用：默认音量 70%，循环由 audio loop 负责 */
+  function applyBgmTrack(index) {
+    var a = getBgm();
+    if (!a || !BGM_PLAYLIST.length) return;
+    var n = BGM_PLAYLIST.length;
+    bgmTrackIndex = ((index % n) + n) % n;
+    var t = BGM_PLAYLIST[bgmTrackIndex];
+    a.pause();
+    a.src = t.src;
+    a.loop = false;
+    a.load();
+    var titleEl = document.getElementById("bgmTrackTitle");
+    if (titleEl) titleEl.textContent = t.title;
+  }
+
+  /** 已通过密码进入站内后调用：默认音量 70%，从第一首起顺序播放 */
   function tryPlayBgmAfterUnlock() {
     var a = getBgm();
     if (!a || !gateOkThisLoad) return;
     a.volume = BGM_VOLUME;
-    a.loop = true;
+    applyBgmTrack(0);
     a.play().then(syncPhonoUi).catch(syncPhonoUi);
   }
 
@@ -214,17 +232,22 @@
     var a = getBgm();
     var disc = document.getElementById("phonographBtn");
     var pp = document.getElementById("vinylPlayCenter");
-    var rew = document.getElementById("bgmRew");
-    var fwd = document.getElementById("bgmFwd");
+    var prev = document.getElementById("bgmPrev");
+    var next = document.getElementById("bgmNext");
+    var sw = document.getElementById("bgmSwitch");
     if (!a) return;
-    if (BGM_SRC) {
-      a.src = BGM_SRC;
-    }
     a.volume = BGM_VOLUME;
-    a.loop = true;
+    a.loop = false;
+    applyBgmTrack(0);
     a.addEventListener("play", syncPhonoUi);
     a.addEventListener("pause", syncPhonoUi);
-    a.addEventListener("ended", syncPhonoUi);
+    a.addEventListener("ended", function () {
+      if (!gateOkThisLoad) return;
+      if (!BGM_PLAYLIST.length) return;
+      var nxt = (bgmTrackIndex + 1) % BGM_PLAYLIST.length;
+      applyBgmTrack(nxt);
+      a.play().then(syncPhonoUi).catch(syncPhonoUi);
+    });
 
     function toggleBgm(ev) {
       if (ev) {
@@ -242,16 +265,43 @@
     if (disc) disc.addEventListener("click", toggleBgm);
     if (pp) pp.addEventListener("click", toggleBgm);
 
-    function seekBy(sec) {
-      return function (ev) {
-        ev.preventDefault();
-        ev.stopPropagation();
-        if (!a.duration || isNaN(a.duration)) return;
-        a.currentTime = Math.max(0, Math.min(a.duration, a.currentTime + sec));
-      };
+    function afterTrackJump(wasPlaying) {
+      if (wasPlaying && gateOkThisLoad) {
+        a.play().then(syncPhonoUi).catch(syncPhonoUi);
+      } else {
+        syncPhonoUi();
+      }
     }
-    if (rew) rew.addEventListener("click", seekBy(-8));
-    if (fwd) fwd.addEventListener("click", seekBy(8));
+
+    function onPrev(ev) {
+      ev.preventDefault();
+      ev.stopPropagation();
+      var wasPlaying = !a.paused;
+      applyBgmTrack(bgmTrackIndex - 1);
+      afterTrackJump(wasPlaying);
+    }
+
+    function onNext(ev) {
+      ev.preventDefault();
+      ev.stopPropagation();
+      var wasPlaying = !a.paused;
+      applyBgmTrack(bgmTrackIndex + 1);
+      afterTrackJump(wasPlaying);
+    }
+
+    function onSwitch(ev) {
+      ev.preventDefault();
+      ev.stopPropagation();
+      if (BGM_PLAYLIST.length < 2) return;
+      var wasPlaying = !a.paused;
+      var idx = BGM_PLAYLIST.length === 2 ? 1 - bgmTrackIndex : (bgmTrackIndex + 1) % BGM_PLAYLIST.length;
+      applyBgmTrack(idx);
+      afterTrackJump(wasPlaying);
+    }
+
+    if (prev) prev.addEventListener("click", onPrev);
+    if (next) next.addEventListener("click", onNext);
+    if (sw) sw.addEventListener("click", onSwitch);
 
     syncPhonoUi();
   }
